@@ -1,0 +1,159 @@
+﻿
+@{
+    Layout = null;
+}
+
+<!DOCTYPE html>
+
+<html>
+<head>
+    <meta name="viewport" content="width=device-width" />
+    <script src="~/Scripts/angular.js"></script>
+    <title>Index2</title>
+    <script>
+        var module = angular.module("datagridModule", []);
+
+        var controller = module.controller("dgController", function ($scope, $http) {
+
+            $scope.mainData = [];
+
+            function ParseToPersonel(object) {
+                var obj = {};
+                obj.Id = object.Id;
+                obj.Ad = object.Ad;
+                obj.Soyad = object.Soyad;
+                obj.TcNo = object.TcNo;
+                obj.Unvan = object.Unvan;
+                obj.Departman = object.Departman;
+                obj.DogumTarihi = object.DogumTarihi;
+                return obj;
+            };
+
+            $scope.dataSource = [];
+
+            $scope.load = function () {
+                $http.get("/api/Personels/GetList").then(function (response) {
+                    $scope.dataSource = response.data;
+                    $scope.mainData = response.data;
+                }, function (response) { console.log(response); });
+            };
+
+            $scope.update = function (object, index, e) {
+
+                if (e != null && e.charCode != 13)
+                    return;
+
+                var personel = ParseToPersonel(object);
+
+                $http.post("/api/Personels/Update", personel).then(function (response) {
+                    object.rowcolor = "green";
+                    $scope.dataSource[index] = object;
+                }, function (error) {
+                    console.log(error);
+                    object.rowcolor = "red";
+                    $scope.dataSource[index] = object;
+                });
+            };
+
+            $scope.load();
+
+            $scope.model = [
+                { Ad: { filter: '', sort: { active: false, reversed: false } } },
+                { Soyad: { filter: '', sort: { active: false, reversed: false } } },
+                { TcNo: { filter: '', sort: { active: false, reversed: false } } },
+                { Unvan: { filter: '', sort: { active: false, reversed: false } } },
+                { Departman: { filter: '', sort: { active: false, reversed: false } } },
+                { DogumTarihi: { filter: '', sort: { active: false, reversed: false } } }
+            ];
+            $scope.orderBy = function (key) {
+
+            };
+            $scope.filterBy = function (key) {
+
+            };
+        });
+    </script>
+    <style>
+        table {
+            text-align: center;
+        }
+
+            table tr {
+                text-align: center;
+            }
+
+                table tr td {
+                }
+
+                    table tr td input {
+                        background: none;
+                    }
+    </style>
+</head>
+<body ng-app="datagridModule" ng-controller="dgController">
+    <div>
+        <div style="float:none; width:100%; height:auto;">
+            <table>
+                <thead>
+                    <tr>
+                        <td>
+                            <label>0</label>
+                            <button ng-click="orderBy('Id')">^</button>
+                        </td>
+                        <td>
+                            <input ng-change="filterBy('Ad');" ng-model="model.Ad.filter" />
+                            <button ng-click="orderBy('Ad')">^</button>
+                        </td>
+                        <td>
+                            <input ng-change="filterBy('Soyad');" ng-model="model.Soyad.filter" />
+                            <button ng-click="orderBy('Soyad')">^</button>
+                        </td>
+                        <td>
+                            <input ng-change="filterBy('TcNo');" ng-model="model.TcNo.filter" />
+                            <button ng-click="orderBy('TcNo')">^</button>
+                        </td>
+                        <td>
+                            <input ng-change="filterBy('Unvan');" ng-model="model.Unvan.filter" />
+                            <button ng-click="orderBy('Unvan')">^</button>
+                        </td>
+                        <td>
+                            <input ng-change="filterBy('Departman');" ng-model="model.Departman.filter" />
+                            <button ng-click="orderBy('Departman')">^</button>
+                        </td>
+                        <td>
+                            <input ng-change="filterBy('DogumTarihi');" ng-model="model.DogumTarihi.filter" />
+                            <button ng-click="orderBy('DogumTarihi')">^</button>
+                        </td>
+                    </tr>
+                </thead>
+            </table>
+            <table ng-repeat="pers in dataSource | orderBy: currentOrder.Key:currentOrder.Reversed">
+
+                <tbody>
+                    <tr style="background-color:{{pers.rowcolor}}">
+                        <td><label>{{pers.Id}}</label></td>
+                        <td>
+                            <input type="text" value="{{pers.Ad}}" ng-model="pers.Ad" ng-keypress="update(pers,$index,$event,this);" />
+                        </td>
+                        <td>
+                            <input type="text" value="{{pers.Soyad}}" ng-model="pers.Soyad" ng-keypress="update(pers,$index,$event);" />
+                        </td>
+                        <td>
+                            <input type="text" value="{{pers.TcNo}}" ng-model="pers.TcNo" ng-keypress="update(pers,$index,$event);" />
+                        </td>
+                        <td>
+                            <input type="text" value="{{pers.Unvan}}" ng-model="pers.Unvan" ng-keypress="update(pers,$index,$event);" />
+                        </td>
+                        <td>
+                            <input type="text" value="{{pers.Departman}}" ng-model="pers.Departman" ng-keypress="update(pers,$index,$event);" />
+                        </td>
+                        <td>
+                            <input type="text" value="{{ pers.DogumTarihi }}" ng-model="pers.DogumTarihi" ng-keypress="update(pers,$index,$event);" />
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</body>
+</html>

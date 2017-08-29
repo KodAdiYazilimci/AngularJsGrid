@@ -1,0 +1,449 @@
+﻿
+@{
+    Layout = null;
+}
+
+<!DOCTYPE html>
+
+<html>
+<head>
+    <meta name="viewport" content="width=device-width" />
+    <script src="~/Scripts/angular.js"></script>
+    <title>Index</title>
+    <script>
+        //İşleyiş:
+        /*
+            Tüm veriler sunucudan çekilip ana belleğe doldurulur ve sayfada maksimum gösterilecek adedi ana bellekten
+        alınıp tampon belleğe yüklenir.Böylece filtreleme, sıralama ve sayfalar arasında gezinme işlemi için tekrar
+        tekrar sunucuya çağrı atılmaz.
+
+            Yeni satır eklenirken sunucuya kayıt atılır, sunucu veritabanına eklenen kaydın id değerini döndürür.
+        Döndürülen id değeri eklenen modelin id si olarak atanır ve id yi alan model hem ana belleğe hem de tampon
+        belleğe eklenir. (Tampon belleğe eklenmesindeki amaç kullanıcı eklenen kaydı anlık görebilsin diye, yoksa
+        en sonuncu sayfaya gittiğinde görebilir)
+
+            Bir satır güncellenmek istendiğinde üzerindeki textboxta değişiklik yapılır ve enter tuşuna basıldığında
+        yapılan değişiklik sunucu üzerinden veritabanına yansıtılır, yansıtma başarılı olursa aynı değişiklik hem ana
+        bellekte hem de tampon bellekte değiştirilir.
+        */
+
+        //modül:
+        var module = angular.module("datagridModule", []);
+
+        //controller:
+        var controller = module.controller("dgController", function ($scope, $http) {
+            //ana bellek:
+            $scope.mainData = []; 
+
+            //tampon bellek:
+            $scope.dataSource = []; 
+
+            //grid modeli:
+            $scope.personelModel = { Id: 0, Ad: '', Soyad: '', TcNo: '', Unvan: '', Departman: '', DogumTarihi: '' };
+
+            //angulardaki grid modelini normal modele dönüştürür:
+            function ParseToPersonel(object) {
+                var obj = {};
+                obj.Id = object.Id;
+                obj.Ad = object.Ad;
+                obj.Soyad = object.Soyad;
+                obj.TcNo = object.TcNo;
+                obj.Unvan = object.Unvan;
+                obj.Departman = object.Departman;
+                obj.DogumTarihi = object.DogumTarihi;
+                return obj;
+            };
+
+            //verileri yükle:
+            $scope.load = function (callback) {
+                $http.get("/api/Personels/GetList").then(function (response) {
+                    $scope.mainData = response.data;//verileri ana belleğe yükle
+
+                    //dış işlem (callback) tanımlanmışsa:
+                    if (callback != undefined) {
+                        //çalıştır:
+                        callback();
+                    }
+                }, function (response) { console.log(response); });
+            };
+
+            //bir satırı güncelle:
+            $scope.update = function (object, index, e) {
+
+                //eğer bir event yoksa
+                if (e != null && e.charCode != 13)
+                    return; //hiçbir işlem yapma
+
+                //angular modeli personel modeline dönüştür:
+                var personel = ParseToPersonel(object);
+
+                //güncellemeyi sunucuya gönder:
+                $http.post("/api/Personels/Update", personel).then(function (response) {
+                    //işlem başarılıysa arka planı yeşil yap:
+                    object.rowcolor = "green";
+                    //güncellenen veriyi ana ve tampon bellekte de değiştir
+                    $scope.dataSource[index] = object;
+                    $scope.mainData[index] = object;
+                }, function (error) {
+                    //hata olursa:
+                    console.log(error);
+                    object.rowcolor = "red";
+                    //güncellenemeyen ancak parse edilen veriyi ana ve tampon belleğe yenilet:
+                    $scope.dataSource[index] = object;
+                    $scope.mainData[index] = object;
+                });
+            };
+
+            //yeni bir satır ekle:
+            $scope.InsertPersonel = function () {
+                //angular modeli personel modele dönüştür:
+                var personel = ParseToPersonel($scope.personelModel);
+
+                //sunucuya insert işlemini gönder
+                $http.post("/api/Personels/Insert", personel).then(function (response) {
+
+                    //başarıyla eklenen kaydın id değerini modele yükle
+                    personel.Id = response.data;
+
+                    //modeli ana ve tampon belleğe doldur:
+                    $scope.dataSource.push(personel);
+                    $scope.mainData.push(personel);
+
+                    //formdaki bilgileri temizlemek için modeli boşalt:
+                    $scope.personelModel = null;
+                }, function (error) {
+                    //hata olursa console a yazdır:
+                    console.log(error);
+                });
+            };
+
+            //filtreleme modeli:
+            //kolonlara göre
+            $scope.filterModel = [{ Ad: "" }, { Soyad: "" }, { TcNo: "" }, { Unvan: "" }, { Departman: "" }, { DogumTarihi: "" }];
+
+            //sıralama modeli:
+            //Active: bu kolonda sıralama var mı?
+            //Reversed: ters sıralama var mı?
+            $scope.orderModel = [
+                { Ad: { Active: false, Reversed: false } },
+                { Soyad: { Active: false, Reversed: false } },
+                { TcNo: { Active: false, Reversed: false } },
+                { Unvan: { Active: false, Reversed: false } },
+                { Departman: { Active: false, Reversed: false } },
+                { DogumTarihi: { Active: false, Reversed: false } }
+            ];
+
+            //şu an ki sıramala şekli:
+            $scope.currentOrder = [{ Key: '', Reversed: false }];
+
+            //sıralama yap:
+            $scope.orderBy = function (key) {
+
+                //şu an ki sıralanan kolonu kaydet:
+                $scope.currentOrder.Key = key;
+
+                //varsayılan ters sıralı değildir:
+                var reverseState = false;
+
+                //sıralama modelindeki her kolonu gez:
+                for (var i = 0; i < $scope.orderModel.length; i++) {
+                    var item = $scope.orderModel[i];
+                    var objectKey = Object.keys(item);
+
+                    //sıralanmak istenen kolonu bul:
+                    if (objectKey == key || objectKey[0] == key) {
+
+                        //ve bu kolonda sıralama yapıldığını sakla:
+                        item.Active = true;
+                        //ve sıralama aynı kolonda ikinci kez yapılıyorsa tersine çevir:
+                        item.Reversed = item.Reversed == true ? false : true;
+
+                        //sıralamanın ters olma durumunu bellekte sakla:
+                        reverseState = item.Reversed;                        
+                    } else {
+                        //eğer sıralanmak istenen başka bir kolonda geziliyorsa
+                        //o kolonda sıralama yapılmadığını ve ters sıralama olmadığını işaretle:
+                        item.Active = false;
+                        item.Reversed = false;
+                    }
+                }
+                //hangi kolonda sıralama yapılıyor olursa olsun
+                //sıralamanın tersten olup olmadığı bilgisini kaydet:
+                $scope.currentOrder.Reversed = reverseState;
+            };
+
+            //filtrele:
+            $scope.filter = function () {
+
+                //varsayılan tüm filtrelenecek alanlar boştur:
+                var isFreeAllFilters = true;
+
+                //her filtre kolonunu sırayla gez
+                for (var i = 0; i < $scope.filterModel.length; i++) {
+                    var key = Object.keys($scope.filterModel[i])[0];
+                    var filterValue = $scope.filterModel[key];
+                    if (filterValue != "" && filterValue != undefined) {
+                        //eğer filtre kolonlarından herhangi birinde bir metin varsa
+                        //bu noktadan sonra filtreme olacak demektir:
+                        isFreeAllFilters = false;
+                        break;
+                    }
+                }
+
+                //tampon belleği boşalt:
+                $scope.dataSource = [];
+
+                //asıl bellekteki tüm datayı tampona baştan doldur:
+                for (var i = 0; i < $scope.mainData.length; i++) {
+                    $scope.dataSource.push($scope.mainData[i]);
+                }
+
+                //eğer hiçbir filtreleme yoksa:
+                if (isFreeAllFilters) {
+                    //pagination tanımlıysa:
+                    if ($scope.pagination != undefined) {
+                        //paginationda şu an ki sayfanın verilerini doldur:
+                        $scope.pagination.navigateNext($scope.pagination.currentPage);
+                    }
+                    //ve işlemi sona erdir:
+                    return;
+                }
+
+                //eğer filtreleme varsa tampon bellekteki her veriyi süzmeye başla:
+                for (var i = 0; i < $scope.dataSource.length; i++) {
+                    for (var j = 0; j < $scope.filterModel.length; j++) {
+
+                        var filterKey = Object.keys($scope.filterModel[j])[0];
+                        var filterValue = $scope.filterModel[filterKey];
+
+                        if (filterValue != "" && filterValue != undefined) {
+
+                            var lowerFilterCase = filterValue.toLowerCase();
+                            var upperFilterCase = filterValue.toUpperCase();
+
+                            var dataValue = $scope.dataSource[i][filterKey];
+
+                            var upperCase = dataValue.toUpperCase();
+                            var lowerCase = dataValue.toLowerCase();
+
+                            //eğer o kolonda aranan metin o satırda yoksa
+                            //o kayıdı tampon bellekten çıkar:
+                            if (upperCase.indexOf(upperFilterCase) == -1 && lowerCase.indexOf(lowerFilterCase) == -1) {
+                                $scope.dataSource.splice(i, 1);
+                                i = -1;
+                                //ve sonraki satıra geç:
+                                break;
+                            }
+                        }
+                    }
+                }
+            };
+
+            //pagination tanımları:
+            $scope.pagination = {};
+
+            //sayfa başına gösterilecek satır sayısı:
+            $scope.pagination.itemCountPerPage = 10;
+            //paginationdaki sayıları barındıracak dizi:
+            $scope.pagination.pagerItems = [];
+            //paginationdaki sayıların adedi:
+            $scope.pagination.pagerCount = 0;
+            //paginationdaki o an seçili sayfa:
+            $scope.pagination.currentPage = 1;
+            //o an ki sayfa için griddeki atlanacak satır sayısı:
+            $scope.pagination.skipCount = 0;
+
+            //pagination sayılarını doldurur:
+            $scope.pagination.fillPagers = function () {
+                //ana bellekteki satır sayısını sayfa başına gösterilecek sayıya böl
+                $scope.pagination.pagerCount =
+                    parseFloat($scope.mainData.length % $scope.pagination.itemCountPerPage) > 0
+                        ?
+                        (parseInt($scope.mainData.length / $scope.pagination.itemCountPerPage) + 1)
+                        :
+                        parseInt($scope.mainData.length / $scope.pagination.itemCountPerPage);
+
+                //eğer ondalık çıkarsa 1 sayfa daha ekle
+
+                //pagination sayılarını diziye ekle:
+                for (var i = 1; i <= $scope.pagination.pagerCount; i++) {
+                    $scope.pagination.pagerItems.push(i);
+                }
+            };
+            //paginationda önceki ya da sonraki sayfalar arasında gezin:
+            $scope.pagination.navigateNext = function (page) {
+                //page: tıklanan sayfanın sayısı
+
+                //eğer geri tıklanıyorsa atlanacak satır sayısını, sayfa başına eklenecek sayı kadar azalt:
+                if (page < $scope.pagination.currentPage) {
+                    $scope.pagination.skipCount -= $scope.pagination.itemCountPerPage;
+                } else if (page > $scope.pagination.currentPage) {
+                    //ileri tıklanıyorsa artır:
+                    $scope.pagination.skipCount += $scope.pagination.itemCountPerPage;
+                }
+                //tıklanan sayfayı geçerli sayfa olarak işaretle:
+                $scope.pagination.currentPage = page;
+
+                //sayfa başına gösterilecek adedi bir değişkene ata:
+                var takeCount = $scope.pagination.itemCountPerPage;
+
+                //tampon belleği boşalt:
+                $scope.dataSource = [];
+
+                //ana bellekteki verileri sırayla gez:
+                for (var i = 0; i < $scope.mainData.length; i++) {
+                    //eğer sırası gelen satır atlanacak satırlar arasındaysa
+                    if (i < $scope.pagination.skipCount) {
+                        //yoksay:
+                        continue;
+                    }
+                    //eğer alınacak satır sayısı halen varsa:
+                    if (takeCount > 0) {
+                        //o satırı tampon belleğe yükle:
+                        $scope.dataSource.push($scope.mainData[i]);
+                        //ve geriye alınacak satır sayısı 1 azalt
+                        takeCount--;
+                    }
+                }                
+            };
+
+            //sayfa açıldığında:
+            $scope.init = function () {
+                //verileri sunucudan çek:
+                $scope.load(function () {
+                    //pagination sayılarını doldur:
+                    $scope.pagination.fillPagers();
+                    //ilk sayfayı seçildi olarak işaretle:
+                    $scope.pagination.navigateNext(1);
+                });
+            };
+        });
+    </script>
+    <style>
+        body {
+            text-align: center;
+        }
+
+        button {
+            width: 50px;
+        }
+
+        table {
+            text-align: center;
+        }
+
+            table tr {
+                text-align: center;
+            }
+
+                table tr td {
+                }
+
+                    table tr td input {
+                        background: none;
+                    }
+    </style>
+</head>
+<body ng-app="datagridModule" ng-controller="dgController" ng-init="init();">
+    <div style="float:none; width:100%; height:auto;">
+
+        <table>
+            <thead>
+                <tr>
+                    <td>
+                        <button>0</button><br />
+                        <button ng-click="orderBy('Id')">^</button>
+                    </td>
+                    <td>
+                        <input ng-change="filter();" ng-model="filterModel.Ad" /><br />
+                        <button ng-click="orderBy('Ad')">^</button>
+                    </td>
+                    <td>
+                        <input ng-change="filter();" ng-model="filterModel.Soyad" /><br />
+                        <button ng-click="orderBy('Soyad')">^</button>
+                    </td>
+                    <td>
+                        <input ng-change="filter();" ng-model="filterModel.TcNo" /><br />
+                        <button ng-click="orderBy('TcNo')">^</button>
+                    </td>
+                    <td>
+                        <input ng-change="filter();" ng-model="filterModel.Unvan" /><br />
+                        <button ng-click="orderBy('Unvan')">^</button>
+                    </td>
+                    <td>
+                        <input ng-change="filter();" ng-model="filterModel.Departman" /><br />
+                        <button ng-click="orderBy('Departman')">^</button>
+                    </td>
+                    <td>
+                        <input ng-change="filter();" ng-model="filterModel.DogumTarihi" /><br />
+                        <button ng-click="orderBy('DogumTarihi')">^</button>
+                    </td>
+                </tr>
+            </thead>
+        </table>
+        <table ng-repeat="pers in dataSource | orderBy : currentOrder.Key : currentOrder.Reversed">
+
+            <tbody>
+                <tr style="background-color:{{pers.rowcolor}}">
+                    <td><button>{{pers.Id}}</button></td>
+                    <td>
+                        <input type="text" value="{{pers.Ad}}" ng-model="pers.Ad" ng-keypress="update(pers,$index,$event,this);" />
+                    </td>
+                    <td>
+                        <input type="text" value="{{pers.Soyad}}" ng-model="pers.Soyad" ng-keypress="update(pers,$index,$event);" />
+                    </td>
+                    <td>
+                        <input type="text" value="{{pers.TcNo}}" ng-model="pers.TcNo" ng-keypress="update(pers,$index,$event);" />
+                    </td>
+                    <td>
+                        <input type="text" value="{{pers.Unvan}}" ng-model="pers.Unvan" ng-keypress="update(pers,$index,$event);" />
+                    </td>
+                    <td>
+                        <input type="text" value="{{pers.Departman}}" ng-model="pers.Departman" ng-keypress="update(pers,$index,$event);" />
+                    </td>
+                    <td>
+                        <input type="text" value="{{ pers.DogumTarihi }}" ng-model="pers.DogumTarihi" ng-keypress="update(pers,$index,$event);" />
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+        <div style="width:100%;">
+            <ul ng-repeat="page in pagination.pagerItems" style="list-style:none;">
+                <li style="float:left; margin-left:5px;">
+                    <a ng-click="pagination.navigateNext(page);" href="#">{{page}}</a>
+                </li>
+            </ul>
+        </div>
+        <br />
+
+        <hr />
+
+        <table>
+            <tr>
+                <td><label>&nbsp;&nbsp;</label></td>
+                <td>
+                    <input type="text" ng-model="personelModel.Ad" />
+                </td>
+                <td>
+                    <input type="text" ng-model="personelModel.Soyad" />
+                </td>
+                <td>
+                    <input type="text" ng-model="personelModel.TcNo" />
+                </td>
+                <td>
+                    <input type="text" ng-model="personelModel.Unvan" />
+                </td>
+                <td>
+                    <input type="text" ng-model="personelModel.Departman" />
+                </td>
+                <td>
+                    <input type="date" ng-model="personelModel.DogumTarihi" />
+                </td>
+                <td>
+                    <button ng-click="InsertPersonel();" style="width:50px;">Ekle</button>
+                </td>
+            </tr>
+        </table>
+    </div>
+</body>
+</html>
